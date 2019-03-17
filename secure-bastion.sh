@@ -297,7 +297,7 @@ MFA Enabled: Yes
 MFA QR Code: ${qrcode}
 
 
-This is auto generated email
+This is an auto generated email
 Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -a /home/${username}/.ssh/${username}.pem -s "Bastion User Created: ${username}" ${email}
 
     echo "================================================"
@@ -328,7 +328,7 @@ function resync_2fa() {
 MFA QR Code: ${qrcode}
 
 
-This is auto generated email
+This is an auto generated email
 Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -s "Bastion User Created: ${username}" ${email}
 
     echo "================================================"
