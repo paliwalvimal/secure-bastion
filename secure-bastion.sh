@@ -365,9 +365,9 @@ function print_splash() {
 
         case "$SPLASH_OPTION" in
             1)
-                local INSTALL_OPTION="y"
+                local INSTALL_OPTION
                 read -p "This will install python-pip, aws-cli and mailx. Continue(Y/n): " INSTALL_OPTION
-                if [[ "${INSTALL_OPTION}" == "[nN]" ]]; then
+                if [[ "${INSTALL_OPTION}" == "n" || "${INSTALL_OPTION}" == "N" ]]; then
                     echo "Exited without installing prerequisites."
                 else
                     install_prerequisites
