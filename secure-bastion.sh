@@ -49,7 +49,7 @@ function install_prerequisites() {
     echo "Installing mailx..."
     echo "================================================"
     if [ "${PKG_MGR}" == "apt" ]; then
-        apt install mailutils -y
+        apt install s-nail -y
     else
         yum install mailx -y
     fi
@@ -81,7 +81,7 @@ function setup_bastion() {
     # Creating RSA Key Pair
     mkdir /home/bastion/.ssh
     ssh-keygen -t rsa -b 4096 -C "bastion" -N "" -f /home/bastion/.ssh/authorized_keys
-    mv /home/bastion/.ssh/authorized_keys /home/bastion/bastion.pem
+    mv /home/bastion/.ssh/authorized_keys /home/bastion/.ssh/bastion.pem
     mv /home/bastion/.ssh/authorized_keys.pub /home/bastion/.ssh/authorized_keys
     chmod 700 /home/bastion/.ssh/
     chmod 600 /home/bastion/.ssh/authorized_keys
@@ -92,8 +92,10 @@ function setup_bastion() {
     echo ""
     echo "Private key of bastion user"
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    cat /home/bastion/bastion.pem
+    cat /home/bastion/.ssh/bastion.pem
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+
+    rm -f /home/bastion/.ssh/bastion.pem
 
     # Forcing custom script execution on SSH login
     echo -e "\nForceCommand /usr/bin/bastion/shell" >> /etc/ssh/sshd_config
@@ -169,6 +171,8 @@ function setup_mail_service() {
     ${PKG_MGR} install postfix -y
     ${PKG_MGR} install cyrus-sasl-plain -y
 
+    awk '!/relayhost/' /etc/postfix/main.cf > temp && mv temp /etc/postfix/main.cf
+
     echo "
 relayhost = [${EMAIL_SERVER_URL}]:${EMAIL_SERVER_PORT}
 smtp_tls_note_starttls_offer = yes
@@ -209,11 +213,17 @@ function setup_2FA() {
     fi
 
     awk '!/auth       substack     password-auth/' /etc/pam.d/sshd > temp && mv temp /etc/pam.d/sshd
+    awk '!/@include common-auth/' /etc/pam.d/sshd > temp && mv temp /etc/pam.d/sshd
     echo "auth       required     pam_google_authenticator.so" >> /etc/pam.d/sshd
 
     cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 
     awk '!/ChallengeResponseAuthentication/' /etc/ssh/sshd_config > temp && mv temp /etc/ssh/sshd_config
+    awk '!/PermitRootLogin/' /etc/ssh/sshd_config > temp && mv temp /etc/ssh/sshd_config
+    awk '!/PubkeyAuthentication/' /etc/ssh/sshd_config > temp && mv temp /etc/ssh/sshd_config
+    awk '!/PasswordAuthentication/' /etc/ssh/sshd_config > temp && mv temp /etc/ssh/sshd_config
+    awk '!/UsePAM/' /etc/ssh/sshd_config > temp && mv temp /etc/ssh/sshd_config
+
     echo "ChallengeResponseAuthentication yes" >> /etc/ssh/sshd_config
     echo "PermitRootLogin no" >> /etc/ssh/sshd_config
     echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
@@ -222,10 +232,11 @@ function setup_2FA() {
 
     # Allowing admin user to login without 2FA
     cat >> /etc/ssh/sshd_config << EOL
+
 Match User "bastion"
     AuthenticationMethods "publickey"
 Match User "*,!bastion"
-    AuthenticationMethods "keyboard-interactive,publickey"
+    AuthenticationMethods "publickey,keyboard-interactive"
 EOL
 
     # Restart SSH service
@@ -257,14 +268,14 @@ function create_bastion_user() {
     mkdir -p /home/${username}/.ssh  
     ssh-keygen -t rsa -b 4096 -C "${email}" -N "" -f /home/${username}/.ssh/authorized_keys
 
-    if [ "${PKG_MGR}" = "apt" ]; then
+    if [ "${PKG_MGR}" == "apt" ]; then
         SU_GROUP="sudo"
     else
         SU_GROUP="wheel"
     fi
 
     # Grant super user access
-    if [ ${su} == "[yY]" ]; then
+    if [ ${su} == 'y' ]; then
         usermod -aG ${SU_GROUP} $username
         echo "${username} ALL=(ALL)  NOPASSWD: ALL" >> /etc/sudoers
     fi
@@ -272,7 +283,7 @@ function create_bastion_user() {
     # Rename the Keys
     mv /home/${username}/.ssh/authorized_keys /home/${username}/.ssh/${username}.pem
     mv /home/${username}/.ssh/authorized_keys.pub /home/${username}/.ssh/authorized_keys
-    chmod 700 /home/${username}/.ssh/
+    chmod 755 /home/${username}/.ssh/
     chmod 644 /home/${username}/.ssh/authorized_keys
     chown -R ${username}:${username} /home/${username}/
 
@@ -292,7 +303,7 @@ BASTION IP ADDRESS: ${BASTION_PUBLIC_IP}
 User Name: ${username}
 Home Directory: /home/${username}
 Authentication Method: Key Based(see the attachment)
-Super User: `if [ ${su} == "[yY]" ]; then echo 'YES'; else echo 'NO'; fi`
+Super User: `if [ ${su} == "y" ]; then echo 'YES'; else echo 'NO'; fi`
 MFA Enabled: Yes
 MFA QR Code: ${qrcode}
 
@@ -300,6 +311,8 @@ MFA QR Code: ${qrcode}
 This is an auto generated email
 Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -a /home/${username}/.ssh/${username}.pem -s "Bastion User Created: ${username}" ${email}
 
+    rm -f /home/${username}/.ssh/${username}.pem
+    
     echo "================================================"
     echo "User ${username} created successfully"
     echo "================================================"
@@ -329,7 +342,7 @@ MFA QR Code: ${qrcode}
 
 
 This is an auto generated email
-Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -s "Bastion User Created: ${username}" ${email}
+Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -a /home/${username}/.ssh/${username}.pem -s "Bastion User Created: ${username}" ${email}
 
     echo "================================================"
     echo "2FA for ${username} was reset successfully"
