@@ -1,22 +1,33 @@
 #!/bin/bash
 
-function install_prerequisites() {
-    # Identifying disto type
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        local DISTRO_IDS=$ID_LIKE
-    else
-        echo "ERROR: Unable to read /etc/os-release file. Exiting."
-        exit 1
-    fi
+# Identifying disto type
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    DISTRO_IDS=$ID_LIKE
+    VERSION=$VERSION_ID
+else
+    echo "ERROR: Unable to read /etc/os-release file. Exiting."
+    exit 1
+fi
 
-    PKG_MGR="apt"
-    for DISTRO_ID in $DISTRO_IDS
-    do
-        if [ "${DISTRO_ID}" = "centos" ] || [ "${DISTRO_ID}" = "rhel" ] || [ "${DISTRO_ID}" = "fedora" ]; then
-            PKG_MGR="yum"
+PKG_MGR="apt"
+for DISTRO_ID in $DISTRO_IDS
+do
+    if [ "${DISTRO_ID}" = "centos" ] || [ "${DISTRO_ID}" = "rhel" ] || [ "${DISTRO_ID}" = "fedora" ]; then
+        PKG_MGR="yum"
+    fi
+done
+
+function install_prerequisites() {
+    
+
+    if [ "${PKG_MGR}" == "yum" ]; then 
+        if [ "${VERSION}" == "[6*]" ]; then
+            yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-6.noarch.rpm -y
+        else
+            yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm -y
         fi
-    done
+    fi
 
     echo "================================================"
     echo "Updating ${PKG_MGR} package..."
@@ -31,14 +42,28 @@ function install_prerequisites() {
     echo "================================================"
     echo "Installing awscli..."
     echo "================================================"
-    if [ "${PKG_MGR}" == "apt" ]; then export LC_ALL=C; fi
+    if [ "${PKG_MGR}" == "apt" ]; then export LC_ALL=C ; fi
     pip install awscli
+
+    echo "================================================"
+    echo "Installing mailx..."
+    echo "================================================"
+    if [ "${PKG_MGR}" == "apt" ]; then
+        apt install mailutils -y
+    else
+        yum install mailx -y
+    fi
 }
 
 function setup_bastion() {
     echo "================================================"
     echo "Setting up bastion server"
     echo "================================================"
+    
+    local BASTION_LOG_BACKUP
+
+    read -p "S3 Bucket Path for logs backup: " BASTION_LOG_BACKUP
+    
     # Creating directory for session log
     mkdir /var/log/bastion
 
@@ -65,8 +90,9 @@ function setup_bastion() {
 
     # Printing private key of bastion user
     echo ""
+    echo "Private key of bastion user"
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-    echo "Private key of bastion user is saved at /home/bastion/bastion.pem"
+    cat /home/bastion/bastion.pem
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
 
     # Forcing custom script execution on SSH login
@@ -81,9 +107,9 @@ function setup_bastion() {
 
     # Creating script to record user's session
     mkdir /usr/bin/bastion
-    cat > /usr/bin/bastion/shell <<EOL
+    cat > /usr/bin/bastion/shell <<'EOL'
 if [[ -z $SSH_ORIGINAL_COMMAND ]]; then
-    SUFFIX="`mktemp -u XXXXXXXXXX`"
+    SUFFIX=`mktemp -u XXXXXXXXXX`
     LOG_FILE="`date --date="today" "+%Y-%m-%d_%H-%M-%S"`_`whoami`_${SUFFIX}"
     LOG_DIR="/var/log/bastion/"
     echo ""
@@ -112,7 +138,7 @@ EOL
 
     # Sync audit files to S3
     crontab -l > /tmp/tmpcron
-    echo "* * * * * $(which aws) s3 sync /var/log/bastion/ s3://genome-bastion-logs --region us-east-1" >> /tmp/tmpcron
+    echo "* * * * * $(which aws) s3 sync /var/log/bastion/ ${BASTION_LOG_BACKUP}" >> /tmp/tmpcron
     crontab /tmp/tmpcron
     rm -f /tmp/tmpcron
 
@@ -134,7 +160,6 @@ function setup_mail_service() {
     if [ "${PKG_MGR}" = "apt" ]; then
         echo "postfix postfix/mailname string $(hostname)" | debconf-set-selections
         echo "postfix postfix/main_mailer_type string 'Internet Site'" | debconf-set-selections
-        echo "postfix postfix/relayhost string ${EMAIL_SERVER_URL}:${EMAIL_SERVER_PORT}" | debconf-set-selections
 
         CA_FILE="/etc/ssl/certs/ca-certificates.crt"
     else
@@ -143,23 +168,24 @@ function setup_mail_service() {
     ${PKG_MGR} remove sendmail -y
     ${PKG_MGR} install postfix -y
     ${PKG_MGR} install cyrus-sasl-plain -y
-    # alternatives --set mta /usr/sbin/postfix
 
-    echo "smtp_tls_note_starttls_offer = yes
-    smtp_tls_security_level = encrypt
-    smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
-    smtp_sasl_security_options = noanonymous
-    smtp_sasl_auth_enable = yes
-    smtp_use_tls = yes
-    smtp_tls_CAfile = ${CA_FILE}
-    " >> /etc/postfix/main.cf
+    echo "
+relayhost = [${EMAIL_SERVER_URL}]:${EMAIL_SERVER_PORT}
+smtp_tls_note_starttls_offer = yes
+smtp_tls_security_level = encrypt
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_sasl_auth_enable = yes
+smtp_use_tls = yes
+smtp_tls_CAfile = ${CA_FILE}" >> /etc/postfix/main.cf
 
-    echo "${EMAIL_SERVER_URL}:${EMAIL_SERVER_PORT} ${SMTP_USERNAME}:${SMTP_PASSWORD}" > /etc/postfix/sasl_passwd
+    echo "[${EMAIL_SERVER_URL}]:${EMAIL_SERVER_PORT} ${SMTP_USERNAME}:${SMTP_PASSWORD}" > /etc/postfix/sasl_passwd
     postmap hash:/etc/postfix/sasl_passwd
     chown root:root /etc/postfix/sasl_passwd /etc/postfix/sasl_passwd.db
     chmod 0600 /etc/postfix/sasl_passwd /etc/postfix/sasl_passwd.db
+    postfix stop
     postfix start
-    postfix reload
+    # postfix reload
 
     echo "================================================"
     echo "Email server setup completed successfully"
@@ -174,7 +200,11 @@ function setup_2FA() {
     if [ "${PKG_MGR}" = "apt" ]; then
         apt install libpam-google-authenticator -y
     else
-        yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm -y
+        if [ "${VERSION}" == "[6*]" ]; then
+            yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-6.noarch.rpm -y
+        else
+            yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm -y
+        fi
         yum install google-authenticator -y
     fi
 
@@ -182,7 +212,9 @@ function setup_2FA() {
     echo "auth       required     pam_google_authenticator.so" >> /etc/pam.d/sshd
 
     cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
-    echo "Port 46285" >> /etc/ssh/sshd_config
+
+    awk '!/ChallengeResponseAuthentication/' /etc/ssh/sshd_config > temp && mv temp /etc/ssh/sshd_config
+    echo "ChallengeResponseAuthentication yes" >> /etc/ssh/sshd_config
     echo "PermitRootLogin no" >> /etc/ssh/sshd_config
     echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
     echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
@@ -190,9 +222,9 @@ function setup_2FA() {
 
     # Allowing admin user to login without 2FA
     cat >> /etc/ssh/sshd_config << EOL
-Match User "$(whoami),bastion"
+Match User "bastion"
     AuthenticationMethods "publickey"
-Match User "*,!$(whoami),!bastion"
+Match User "*,!bastion"
     AuthenticationMethods "keyboard-interactive,publickey"
 EOL
 
@@ -209,6 +241,14 @@ function create_bastion_user() {
     read -p "User Name: " username
     read -p "Email Address: " email
     read -p "Super User Access[y/N]: " superuser
+
+    id ${username} &>/dev/null
+    if [[ $? -eq 0 ]]; then
+        echo "User already exists"
+        return 1
+    fi
+
+    if [[ -z ${superuser} ]]; then superuser="n"; fi
 
     declare -l su=$superuser
 
@@ -236,33 +276,63 @@ function create_bastion_user() {
     chmod 644 /home/${username}/.ssh/authorized_keys
     chown -R ${username}:${username} /home/${username}/
 
-    # Setup Google Authendicator
-    yes y | su  ${username} -c "google-authenticator  >> ~/.google-authendicator-qr-code"
-
-    # Installing mailx
-    ${PKG_MGR} install mailx -y
+    # Setup Google Authenticator
+    su ${username} -c "google-authenticator -t -d -f -r 3 -R 30 -w 3 >> ~/.google-authenticator-qr-code"
     
-    # send email
-    local qrcode=`cat /home/${username}/.google-authendicator-qr-code | grep 'google.com'`
+    # Send email
+    local qrcode=`cat /home/${username}/.google-authenticator-qr-code | grep 'google.com'`
+    rm -f /home/${username}/.google-authenticator-qr-code
+
+    local BASTION_PUBLIC_IP=$(curl -s ifconfig.me)
     echo "Hey ${username},
 
-    User account has been created for you from bastion.  
-    Please find the details below: 
-    BASTION IP ADDRESS: $(dig +short myip.opendns.com @resolver1.opendns.com) (IP address)
-    SSH PORT: 46285
-    User Name: ${username}
-    Home Directory: /home/${username}
-    Authentication Method: Key Based(see the attachment)
-    Super User:`if [ ${su} == 'y' ]; then echo 'YES'; else echo 'NO'; fi`
-    MFA Enabled: Yes
-    MFA QR Code: ${qrcode}
+User account has been created for you from bastion.  
+Please find the details below: 
+BASTION IP ADDRESS: ${BASTION_PUBLIC_IP}
+User Name: ${username}
+Home Directory: /home/${username}
+Authentication Method: Key Based(see the attachment)
+Super User: `if [ ${su} == "[yY]" ]; then echo 'YES'; else echo 'NO'; fi`
+MFA Enabled: Yes
+MFA QR Code: ${qrcode}
 
 
-    This is auto generated email
-    Contact: cloud-team@coditas.com in case of any issue" | mailx -r "mantis@coditas.com (Bastion Admin)" -a /home/${username}/.ssh/${username}.pem -s "Bastion User Created: ${username}" ${email}
+This is auto generated email
+Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -a /home/${username}/.ssh/${username}.pem -s "Bastion User Created: ${username}" ${email}
 
     echo "================================================"
     echo "User ${username} created successfully"
+    echo "================================================"
+}
+
+function resync_2fa() {
+    local username
+    read -p "User Name: " username
+    read -p "Email Address: " email
+
+    id ${username} &>/dev/null
+    if [[ $? -eq 1 ]]; then
+        echo "User not found"
+        return 1
+    fi
+    # Setup Google Authenticator
+    su ${username} -c "google-authenticator -t -d -f -r 3 -R 30 -w 3 >> ~/.google-authenticator-qr-code"
+    
+    # Send email
+    local qrcode=`cat /home/${username}/.google-authenticator-qr-code | grep 'google.com'`
+    rm -f /home/${username}/.google-authenticator-qr-code
+
+    echo "Hey ${username},
+
+2FA for your account has been reset. Please scan the below QR Code to re-sync your device.
+MFA QR Code: ${qrcode}
+
+
+This is auto generated email
+Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -s "Bastion User Created: ${username}" ${email}
+
+    echo "================================================"
+    echo "2FA for ${username} was reset successfully"
     echo "================================================"
 }
 
@@ -276,14 +346,15 @@ function print_splash() {
         echo "3. Setup Mail Server"
         echo "4. Setup 2FA"
         echo "5. Create User"
+        echo "6. Re-Sync 2FA"
         echo "0. Quit"
         read -p "Select an option: " SPLASH_OPTION
 
         case "$SPLASH_OPTION" in
             1)
                 local INSTALL_OPTION="y"
-                read -p "This will install python-pip and aws-cli. Continue(Y/n):" INSTALL_OPTION
-                if [[ "${INSTALL_OPTION}" == [nN] ]]; then
+                read -p "This will install python-pip, aws-cli and mailx. Continue(Y/n): " INSTALL_OPTION
+                if [[ "${INSTALL_OPTION}" == "[nN]" ]]; then
                     echo "Exited without installing prerequisites."
                 else
                     install_prerequisites
@@ -300,6 +371,9 @@ function print_splash() {
                 ;;
             5)
                 create_bastion_user
+                ;;
+            6)
+                resync_2fa
                 ;;
             0)
                 exit 0
