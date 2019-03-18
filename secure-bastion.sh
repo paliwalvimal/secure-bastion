@@ -342,7 +342,7 @@ MFA QR Code: ${qrcode}
 
 
 This is an auto generated email
-Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -a /home/${username}/.ssh/${username}.pem -s "Bastion User Created: ${username}" ${email}
+Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -s "Bastion User Created: ${username}" ${email}
 
     echo "================================================"
     echo "2FA for ${username} was reset successfully"
