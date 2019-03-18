@@ -5,6 +5,7 @@ if [ -f /etc/os-release ]; then
     . /etc/os-release
     DISTRO_IDS=$ID_LIKE
     VERSION=$VERSION_ID
+    EXACT_ID=$ID
 else
     echo "ERROR: Unable to read /etc/os-release file. Exiting."
     exit 1
@@ -19,8 +20,6 @@ do
 done
 
 function install_prerequisites() {
-    
-
     if [ "${PKG_MGR}" == "yum" ]; then 
         if [ "${VERSION}" == "[6*]" ]; then
             yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-6.noarch.rpm -y
@@ -48,8 +47,18 @@ function install_prerequisites() {
     echo "================================================"
     echo "Installing mailx..."
     echo "================================================"
+    if [[ "${EXACT_ID}" == "ubuntu" ]]; then
+        if [[ "${VERSION}" == "14*" ]]; then
+            MAIL_CMD="mailx"
+        elif [[ "${VERSION}" == "16*" || "${VERSION}" == "18*" ]]; then
+            MAIL_CMD="s-nail"
+        fi
+    else
+        MAIL_CMD="mailx"
+    fi
+
     if [ "${PKG_MGR}" == "apt" ]; then
-        apt install s-nail -y
+        apt install ${MAIL_CMD} -y
     else
         yum install mailx -y
     fi
@@ -309,7 +318,7 @@ MFA QR Code: ${qrcode}
 
 
 This is an auto generated email
-Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -a /home/${username}/.ssh/${username}.pem -s "Bastion User Created: ${username}" ${email}
+Contact: vimal@coditas.com in case of any issue" | ${MAIL_CMD} -r "Vimal<vimal@coditas.com>" -a /home/${username}/.ssh/${username}.pem -s "Bastion User Created: ${username}" ${email}
 
     rm -f /home/${username}/.ssh/${username}.pem
     
@@ -342,7 +351,7 @@ MFA QR Code: ${qrcode}
 
 
 This is an auto generated email
-Contact: vimal@coditas.com in case of any issue" | mailx -r "Vimal<vimal@coditas.com>" -s "Bastion User Created: ${username}" ${email}
+Contact: vimal@coditas.com in case of any issue" | ${MAIL_CMD} -r "Vimal<vimal@coditas.com>" -s "Bastion User Created: ${username}" ${email}
 
     echo "================================================"
     echo "2FA for ${username} was reset successfully"
