@@ -48,16 +48,17 @@ function install_prerequisites() {
     echo "Installing mailx..."
     echo "================================================"
     if [[ "${EXACT_ID}" == "ubuntu" ]]; then
-        if [[ "${VERSION}" == "14*" ]]; then
+        if [[ "${VERSION}" =~ "[14]{2}.*" ]]; then
+            ${PKG_MGR} install heirloom-mailx -y
             MAIL_CMD="mailx"
-        elif [[ "${VERSION}" == "16*" || "${VERSION}" == "18*" ]]; then
+        elif [[ "${VERSION}" =~ "[16]{2}.*" || "${VERSION}" =~ "[18]{2}.*" ]]; then
+            ${PKG_MGR} install s-nail -y
             MAIL_CMD="s-nail"
         fi
     else
+        ${PKG_MGR} install mailx -y
         MAIL_CMD="mailx"
     fi
-
-    ${PKG_MGR} install ${MAIL_CMD} -y
 }
 
 function setup_bastion() {
