@@ -19,6 +19,19 @@ do
     fi
 done
 
+if [[ "${EXACT_ID}" == "ubuntu" ]]; then
+    if [[ ${VERSION} =~ [14]{2}.* ]]; then
+        MAIL_PKG="heirloom-mailx"
+        MAIL_CMD="mailx"
+    elif [[ ${VERSION} =~ [16]{2}.* || ${VERSION} =~ [18]{2}.* ]]; then
+        MAIL_PKG="s-nail"
+        MAIL_CMD="s-nail"
+    fi
+else
+    MAIL_PKG="mailx"
+    MAIL_CMD="mailx"
+fi
+
 function install_prerequisites() {
     if [ "${PKG_MGR}" == "yum" ]; then 
         if [ "${VERSION}" == "[6*]" ]; then
@@ -47,18 +60,7 @@ function install_prerequisites() {
     echo "================================================"
     echo "Installing mailx..."
     echo "================================================"
-    if [[ "${EXACT_ID}" == "ubuntu" ]]; then
-        if [[ ${VERSION} =~ [14]{2}.* ]]; then
-            ${PKG_MGR} install heirloom-mailx -y
-            MAIL_CMD="mailx"
-        elif [[ ${VERSION} =~ [16]{2}.* || ${VERSION} =~ [18]{2}.* ]]; then
-            ${PKG_MGR} install s-nail -y
-            MAIL_CMD="s-nail"
-        fi
-    else
-        ${PKG_MGR} install mailx -y
-        MAIL_CMD="mailx"
-    fi
+    ${PKG_MGR} install ${MAIL_PKG} -y
 }
 
 function setup_bastion() {
