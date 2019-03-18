@@ -34,7 +34,7 @@ fi
 
 function install_prerequisites() {
     if [ "${PKG_MGR}" == "yum" ]; then 
-        if [ "${VERSION}" == "[6*]" ]; then
+        if [ ${VERSION} =~ [6]{1}.* ]; then
             yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-6.noarch.rpm -y
         else
             yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm -y
@@ -212,7 +212,7 @@ function setup_2FA() {
     if [ "${PKG_MGR}" = "apt" ]; then
         apt install libpam-google-authenticator -y
     else
-        if [ "${VERSION}" == "[6*]" ]; then
+        if [ ${VERSION} =~ [6]{1}.* ]; then
             yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-6.noarch.rpm -y
         else
             yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm -y
