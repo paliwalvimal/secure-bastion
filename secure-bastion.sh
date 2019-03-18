@@ -57,11 +57,7 @@ function install_prerequisites() {
         MAIL_CMD="mailx"
     fi
 
-    if [ "${PKG_MGR}" == "apt" ]; then
-        apt install ${MAIL_CMD} -y
-    else
-        yum install mailx -y
-    fi
+    ${PKG_MGR} install ${MAIL_CMD} -y
 }
 
 function setup_bastion() {
