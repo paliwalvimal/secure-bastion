@@ -48,10 +48,10 @@ function install_prerequisites() {
     echo "Installing mailx..."
     echo "================================================"
     if [[ "${EXACT_ID}" == "ubuntu" ]]; then
-        if [[ "${VERSION}" =~ "[14]{2}.*" ]]; then
+        if [[ ${VERSION} =~ [14]{2}.* ]]; then
             ${PKG_MGR} install heirloom-mailx -y
             MAIL_CMD="mailx"
-        elif [[ "${VERSION}" =~ "[16]{2}.*" || "${VERSION}" =~ "[18]{2}.*" ]]; then
+        elif [[ ${VERSION} =~ [16]{2}.* || ${VERSION} =~ [18]{2}.* ]]; then
             ${PKG_MGR} install s-nail -y
             MAIL_CMD="s-nail"
         fi
